@@ -49,7 +49,7 @@ SerDes(src, out:="") {
 			throw "Failed to open file: '" src "' for reading."
 		src := f.Read(), f.Close()
 	}
-	;// Begin deserialization routine
+	;// Begin de-serialization routine
 	static is_v2 := (A_AhkVersion >= "2"), q := Chr(34)
 	static push := Func(is_v2 ? "ObjPush"     : "ObjInsert")
 	     , ins  := Func(is_v2 ? "ObjInsertAt" : "ObjInsert")
@@ -90,91 +90,71 @@ SerDes(src, out:="") {
 		%push%(strings, str) ;// strings.Insert(str) / strings.Push(str)
 	}
 	;// Begin recursive descent to parse markup
-	object := Object(), array := Array()
-	, pos := 0
-	, key := none := [], is_key := false
+	pos := 0
+	, is_key := false
 	, refs := [], kobj := []
-	, stack := [result := []]
-	, assert := q . "{[01234567890-"
+	, stack := [tree := []]
+	, is_arr := Object(tree, 1)
+	, next := q "{[01234567890-"
 	while ((ch := SubStr(src, ++pos, 1)) != "") {
-		while (ch != "" && InStr(" `t`n`r", ch))
-			ch := SubStr(src, ++pos, 1)
-		if (assert != "") {
-			if !InStr(assert, ch)
-				throw "Unexpected char: '" . ch . "'"
-			assert := ""
-		}
+		if InStr(" `t`n`r", ch)
+			continue
+		if !InStr(next, ch)
+			throw "Unexpected char: '" ch "'"
+		_obj := stack[1]
 		;// Associative/Linear array opening
 		if InStr("{[", ch) {
-			sub := ch == "{" ? new object : new array
-			, %push%(refs, &sub)
+			val := {}, is_arr[val] := ch == "[", %push%(refs, &val)
 			if is_key
-				%ins%(kobj, 1, sub), key := sub
-			cont := stack[1]
-			, (key == none) ? %push%(cont, sub) : %set%(cont, key, is_key ? 0 : sub)
-			, %ins%(stack, 1, sub) ;// .Insert(1, sub) / .InsertAt(1, sub)
-			, assert := q "{[0123456789-$" (ch == "{" ? "}" : "]")
-			, is_key := ch == "{"
-			if (key != none)
-				key := none
+				%ins%(kobj, 1, val), key := val
+			is_arr[_obj] ? %push%(_obj, val) : %set%(_obj, key, is_key ? 0 : val)
+			, %ins%(stack, 1, val), is_key := ch == "{"
+			, next := q "{[0123456789-$" (is_arr[val] ? "]" : "}") ; (is_key ? "}" : "]")
+			continue
 		}
 		;// Associative/Linear array closing
 		else if InStr("}]", ch) {
+			next := is_arr[stack[2]] ? "]," : "},"
 			if (kobj[1] == %del%(stack, 1))
-				key := %del%(kobj, 1) ;// kobj.Remove(1)
-				, key.base := "", assert := ":"
-			cont := stack[1]
-			if (assert == "")
-				assert := cont.base == object ? "}," : "],"
+				key := %del%(kobj, 1), next := ":"
+			continue
 		}
 		;// Token
 		else if InStr(",:", ch) {
-			assert := q "{[0123456789-$"
-			, is_key := (cont.base == object && ch == ",")
-		}
-		;// Object reference token
-		else if (ch == "$") {
-			is_ref := true
-			, assert := "0123456789"
+			if (_obj == tree)
+				throw "Unexpected char: '" ch "' -> there is no container object."
+			next := q "{[0123456789-$"
+			, is_key := (!is_arr[_obj] && ch == ",")
+			continue
 		}
 		;// String
 		else if (ch == q) {
-			str := %del%(strings, 1)
-			, cont := stack[1]
-			if is_key {
-				key := str, assert := ":"
-				continue
-			}
-			(key == none) ? %push%(cont, str) : %set%(cont, key, str)
-			, assert := (cont.base == object ? "}," : "],")
-			if (key != none)
-				key := none
+			val := %del%(strings, 1)
 		}
-		;// Number / Object reference index
-		else if (ch >= 0 && ch <= 9) || (ch == "-") {
-			num := SubStr(src, pos, (SubStr(src, pos) ~= "[\]\}:,\s]|$")-1)
-			if (Abs(num) == "")
-				throw "Invalid number: " num
-			pos += StrLen(num)-1, num += 0
+		;// Number / Object reference
+		else if (ch >= 0 && ch <= 9) || InStr("-$", ch) {
+			if (is_ref := (ch == "$")) ;// object reference token
+				pos += 1
+			val := SubStr(src, pos, (SubStr(src, pos) ~= "[\]\}:,\s]|$")-1)
+			if (Abs(val) == "")
+				throw "Invalid number: " val
+			pos += StrLen(val)-1, val += 0
 			if is_ref {
-				if !(num := Object(refs[num]))
-					throw "Invalid object reference: $" num
-				is_ref := false
+				if !ObjHasKey(refs, val)
+					throw "Invalid object reference: $" val
+				val := Object(refs[val]), is_ref := false
 			}
-			cont := stack[1]
-			if is_key {
-				key := num, assert := ":"
-				continue
-			}
-			(key == none) ? %push%(cont, num) : %set%(cont, key, num)
-			, assert := (cont.base == object ? "}," : "],")
-			if (key != none)
-				key := none
 		}
+		if is_key {
+			key := val, next := ":"
+			continue
+		}
+		is_arr[_obj] ? %push%(_obj, val) : %set%(_obj, key, val)
+		, next := is_arr[_obj] ? "]," : "},"
 	}
-	return result[1]
+	return tree[1]
 }
-;// Helper function, dumps object to string -> internal use only
+;// Helper function, serialize object to string -> internal use only
 _sddumps(obj, refs:=false) { ;// refs=internal parameter
 	static q := Chr(34)      ;// Double quote, for v1.1 & v2.0-a compatibility
 	static esc_seq := {      ;// AHK escape sequences
@@ -202,7 +182,7 @@ _sddumps(obj, refs:=false) { ;// refs=internal parameter
 		for k, v in obj {
 			val := _sddumps(v, refs)
 			str .= (arr ? val : _sddumps(k, refs) ":" val)
-			     . (A_Index < len ? "," : "")
+			    .  (A_Index < len ? "," : "")
 		}
 		return arr ? "[" str "]" : "{" str "}"
 	}
