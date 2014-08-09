@@ -1,6 +1,6 @@
 /* Function:     SerDes
  *     Serializes an AHK object to string and optionally dumps it into a file.
- *     Deserializes a 'SerDes()' formatted string to an AHK object.
+ *     De-serializes a 'SerDes()' formatted string to an AHK object.
  * AHK Version:  Tested on v1.1.15.03 and v2.0-a049
  *
  * Syntax (Serialize):
@@ -28,7 +28,7 @@
  *     data type only.
  *     Object references, including circular ones, are supported and notated
  *     as '$n', where 'n' is the 1-based index of the referenced object in the
- *     heirarchy tree as it appears during enumeration (for-loop) OR as it
+ *     heirarchy tree when encountered during enumeration (for-loop) OR as it
  *     appears from left to right (for string representation) as marked by an
  *     opening brace or bracket. See diagram below:
  *     1    2
@@ -50,12 +50,12 @@ SerDes(src, out:="") {
 		src := f.Read(), f.Close()
 	}
 	;// Begin de-serialization routine
-	static is_v2 := (A_AhkVersion >= "2"), q := Chr(34)
-	static push := Func(is_v2 ? "ObjPush"     : "ObjInsert")
-	     , ins  := Func(is_v2 ? "ObjInsertAt" : "ObjInsert")
-	     , set  := Func(is_v2 ? "ObjRawSet"   : "ObjInsert")
-	     , pop  := Func(is_v2 ? "ObjPop"      : "ObjRemove")
-	     , del  := Func(is_v2 ? "ObjRemoveAt" : "ObjRemove")
+	static is_v2 := (A_AhkVersion >= "2"), q := Chr(34) ;// Double quote
+	     , push  := Func(is_v2 ? "ObjPush"     : "ObjInsert")
+	     , ins   := Func(is_v2 ? "ObjInsertAt" : "ObjInsert")
+	     , set   := Func(is_v2 ? "ObjRawSet"   : "ObjInsert")
+	     , pop   := Func(is_v2 ? "ObjPop"      : "ObjRemove")
+	     , del   := Func(is_v2 ? "ObjRemoveAt" : "ObjRemove")
 	static esc_seq := {   ;// AHK escape sequences
 	(Join Q C
 		"``": "``",       ;// accent
@@ -72,18 +72,15 @@ SerDes(src, out:="") {
 	strings := [], i := 0, end := is_v2-1 ;// v1.1=-1, v2.0-a=0 -> SubStr()
 	while (i := InStr(src, q,, i+1)) {
 		j := i
-		while (j := InStr(src, q,, j+1)) {
-			str := SubStr(src, i+1, j-i-1)
-			if (SubStr(str, end) != "``")
+		while (j := InStr(src, q,, j+1))
+			if (SubStr(str := SubStr(src, i+1, j-i-1), end) != "``")
 				break
-		}
 		if !j
 			throw "Missing close quote(s)."
 		src := SubStr(src, 1, i) . SubStr(src, j+1)
 		z := 0
 		while (z := InStr(str, "``",, z+1)) {
-			ch := SubStr(str, z+1, 1)
-			if InStr(q . "``nrbtvaf", ch)
+			if InStr(q . "``nrbtvaf", ch := SubStr(str, z+1, 1))
 				str := SubStr(str, 1, z-1) . esc_seq[ch] . SubStr(str, z+2)
 			else throw "Invalid escape sequence: '``" . ch . "'" 
 		}
@@ -91,66 +88,60 @@ SerDes(src, out:="") {
 	}
 	;// Begin recursive descent to parse markup
 	pos := 0
-	, is_key := false
-	, refs := [], kobj := []
+	, is_key := false ;// if true, active data is to be used as associative array key
+	, refs := [], kobj := [] ;// refs=object references, kobj=objects as keys
 	, stack := [tree := []]
 	, is_arr := Object(tree, 1)
-	, next := q "{[01234567890-"
+	, next := q "{[01234567890-" ;// chars considered valid when encountered
 	while ((ch := SubStr(src, ++pos, 1)) != "") {
 		if InStr(" `t`n`r", ch)
 			continue
-		if !InStr(next, ch)
+		if !InStr(next, ch) ;// validate current char
 			throw "Unexpected char: '" ch "'"
-		_obj := stack[1]
+		is_array := is_arr[_obj := stack[1]] ;// active container object
 		;// Associative/Linear array opening
 		if InStr("{[", ch) {
 			val := {}, is_arr[val] := ch == "[", %push%(refs, &val)
 			if is_key
 				%ins%(kobj, 1, val), key := val
-			is_arr[_obj] ? %push%(_obj, val) : %set%(_obj, key, is_key ? 0 : val)
+			is_array? %push%(_obj, val) : %set%(_obj, key, is_key ? 0 : val)
 			, %ins%(stack, 1, val), is_key := ch == "{"
-			, next := q "{[0123456789-$" (is_arr[val] ? "]" : "}") ; (is_key ? "}" : "]")
-			continue
+			, next := q "{[0123456789-$" (is_key ? "}" : "]") ;// Chr(NumGet(ch, "Char")+2)
 		}
 		;// Associative/Linear array closing
 		else if InStr("}]", ch) {
 			next := is_arr[stack[2]] ? "]," : "},"
 			if (kobj[1] == %del%(stack, 1))
 				key := %del%(kobj, 1), next := ":"
-			continue
 		}
 		;// Token
 		else if InStr(",:", ch) {
 			if (_obj == tree)
 				throw "Unexpected char: '" ch "' -> there is no container object."
-			next := q "{[0123456789-$"
-			, is_key := (!is_arr[_obj] && ch == ",")
-			continue
+			next := q "{[0123456789-$", is_key := (!is_array && ch == ",")
 		}
-		;// String
-		else if (ch == q) {
-			val := %del%(strings, 1)
-		}
-		;// Number / Object reference
-		else if (ch >= 0 && ch <= 9) || InStr("-$", ch) {
-			if (is_ref := (ch == "$")) ;// object reference token
-				pos += 1
-			val := SubStr(src, pos, (SubStr(src, pos) ~= "[\]\}:,\s]|$")-1)
-			if (Abs(val) == "")
-				throw "Invalid number: " val
-			pos += StrLen(val)-1, val += 0
-			if is_ref {
-				if !ObjHasKey(refs, val)
-					throw "Invalid object reference: $" val
-				val := Object(refs[val]), is_ref := false
+		;// String | Number | Object reference
+		else {
+			if (ch == q) {                 ;// string
+				val := %del%(strings, 1)
+			} else {                       ;// number / object reference
+				if (is_ref := (ch == "$")) ;// object reference token
+					pos += 1
+				val := SubStr(src, pos, (SubStr(src, pos) ~= "[\]\}:,\s]|$")-1)
+				if (Abs(val) == "")
+					throw "Invalid number: " val
+				pos += StrLen(val)-1, val += 0
+				if is_ref {
+					if !ObjHasKey(refs, val)
+						throw "Invalid object reference: $" val
+					val := Object(refs[val]), is_ref := false
+				}
 			}
+			if is_key
+				key := val, next := ":"
+			else is_array? %push%(_obj, val) : %set%(_obj, key, val)
+			, next := is_array ? "]," : "},"
 		}
-		if is_key {
-			key := val, next := ":"
-			continue
-		}
-		is_arr[_obj] ? %push%(_obj, val) : %set%(_obj, key, val)
-		, next := is_arr[_obj] ? "]," : "},"
 	}
 	return tree[1]
 }
@@ -159,7 +150,7 @@ _sddumps(obj, refs:=false) { ;// refs=internal parameter
 	static q := Chr(34)      ;// Double quote, for v1.1 & v2.0-a compatibility
 	static esc_seq := {      ;// AHK escape sequences
 	(Join Q C
-		(q):  "``" . q,      ;// double-quote
+		(q):  "``" . q,      ;// double quote
 		"`n": "``n",         ;// newline
 		"`r": "``r",         ;// carriage return
 		"`b": "``b",         ;// backspace
@@ -193,7 +184,7 @@ _sddumps(obj, refs:=false) { ;// refs=internal parameter
 		obj := SubStr(obj, 1, i-1) . "````" . SubStr(obj, i+=1)
 	for k, v in esc_seq {
 		/* StringReplace/StrReplace workaround routine for v1.1 and v2.0-a
-		 * compatibility. TODO: Compare w/ RegExReplace()
+		 * compatibility. TODO: Compare w/ RegExReplace(), use RegExReplace()??
 		 */
 		i := 0
 		while (i := InStr(obj, k,, i+1))

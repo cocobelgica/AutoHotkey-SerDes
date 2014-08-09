@@ -29,7 +29,7 @@ src      [in]       - Either a 'SerDes()' formatted string or the path to the fi
 - - -
 ## Remarks:
 * Serilaized output is similar to [JSON](http://json.org/) except for escape sequences which follows [AHK's specification](http://ahkscript.org/docs/commands/_EscapeChar.htm#Escape_Sequences_when_accent_is_the_escape_character). Also, strings, numbers and objects are allowed as `object/{}` keys unlike JSON which restricts it to string data type only.
-* Object references, including circular ones, are supported and notated as `$n`, where `n` is the **1-based** index of the referenced object in the heirarchy tree as it appears during enumeration *(for-loop)* OR as it appears from left to right *(for string representation)* as marked by an opening brace`{` or bracket`[`.
+* Object references, including circular ones, are supported and notated as `$n`, where `n` is the **1-based** index of the referenced object in the heirarchy tree when encountered during enumeration *(for-loop)* OR as it appears from left to right *(for string representation)* as marked by an opening brace`{` or bracket`[`.
 ```javascript
 1         2
 { "key1": ["Hello World"], "key2": $2 } // -> $2 references the object stored in 'key1'
