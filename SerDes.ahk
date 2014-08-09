@@ -56,17 +56,17 @@ SerDes(src, out:="") {
 	     , set   := Func(is_v2 ? "ObjRawSet"   : "ObjInsert")
 	     , pop   := Func(is_v2 ? "ObjPop"      : "ObjRemove")
 	     , del   := Func(is_v2 ? "ObjRemoveAt" : "ObjRemove")
-	static esc_seq := {   ;// AHK escape sequences
+	static esc_seq := { ;// AHK escape sequences
 	(Join Q C
-		"``": "``",       ;// accent
-		(q):  q,          ;// double quote
-		"n":  "`n",       ;// newline
-		"r":  "`r",       ;// carriage return
-		"b":  "`b",       ;// backspace
-		"t":  "`t",       ;// tab
-		"v":  "`v",       ;// vertical tab
-		"a":  "`a",       ;// alert (bell)
-		"f":  "`f"        ;// formfeed
+		"``": "``",  ;// accent
+		(q):  q,     ;// double quote
+		"n":  "`n",  ;// newline
+		"r":  "`r",  ;// carriage return
+		"b":  "`b",  ;// backspace
+		"t":  "`t",  ;// tab
+		"v":  "`v",  ;// vertical tab
+		"a":  "`a",  ;// alert (bell)
+		"f":  "`f"   ;// formfeed
 	)}
 	;// Extract string literals
 	strings := [], i := 0, end := is_v2-1 ;// v1.1=-1, v2.0-a=0 -> SubStr()
@@ -122,9 +122,9 @@ SerDes(src, out:="") {
 		}
 		;// String | Number | Object reference
 		else {
-			if (ch == q) {                 ;// string
+			if (ch == q) { ;// string
 				val := %del%(strings, 1)
-			} else {                       ;// number / object reference
+			} else { ;// number / object reference
 				if (is_ref := (ch == "$")) ;// object reference token
 					pos += 1
 				val := SubStr(src, pos, (SubStr(src, pos) ~= "[\]\}:,\s]|$")-1)
@@ -147,17 +147,17 @@ SerDes(src, out:="") {
 }
 ;// Helper function, serialize object to string -> internal use only
 _sddumps(obj, refs:=false) { ;// refs=internal parameter
-	static q := Chr(34)      ;// Double quote, for v1.1 & v2.0-a compatibility
-	static esc_seq := {      ;// AHK escape sequences
+	static q := Chr(34) ;// Double quote, for v1.1 & v2.0-a compatibility
+	static esc_seq := { ;// AHK escape sequences
 	(Join Q C
-		(q):  "``" . q,      ;// double quote
-		"`n": "``n",         ;// newline
-		"`r": "``r",         ;// carriage return
-		"`b": "``b",         ;// backspace
-		"`t": "``t",         ;// tab
-		"`v": "``v",         ;// vertical tab
-		"`a": "``a",         ;// alert (bell)
-		"`f": "``f"          ;// formfeed
+		(q):  "``" . q,  ;// double quote
+		"`n": "``n",     ;// newline
+		"`r": "``r",     ;// carriage return
+		"`b": "``b",     ;// backspace
+		"`t": "``t",     ;// tab
+		"`v": "``v",     ;// vertical tab
+		"`a": "``a",     ;// alert (bell)
+		"`f": "``f"      ;// formfeed
 	)}
 	if IsObject(obj) {
 		if !refs
