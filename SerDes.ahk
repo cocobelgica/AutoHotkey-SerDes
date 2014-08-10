@@ -69,7 +69,7 @@ SerDes(src, out:="") {
 		"f":  "`f"   ;// formfeed
 	)}
 	;// Extract string literals
-	strings := [], i := 0, end := is_v2-1 ;// v1.1=-1, v2.0-a=0 -> SubStr()
+	strings := [], i := 0, end := 0-is_v2 ;// v1.1=0, v2.0-a=-1 -> SubStr()
 	while (i := InStr(src, q,, i+1)) {
 		j := i
 		while (j := InStr(src, q,, j+1))
