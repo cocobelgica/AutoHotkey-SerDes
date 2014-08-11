@@ -36,7 +36,7 @@
  */
 SerDes(src, out:="") {
 	if IsObject(src) {
-		ret := _sddumps(src)
+		ret := _SerDes(src)
 		if (out == "")
 			return ret
 		if !(f := FileOpen(out, "w"))
@@ -78,10 +78,10 @@ SerDes(src, out:="") {
 		if !j
 			throw "Missing close quote(s)."
 		src := SubStr(src, 1, i) . SubStr(src, j+1)
-		z := 0
-		while (z := InStr(str, "``",, z+1)) {
-			if InStr(q . "``nrbtvaf", ch := SubStr(str, z+1, 1))
-				str := SubStr(str, 1, z-1) . esc_seq[ch] . SubStr(str, z+2)
+		k := 0
+		while (k := InStr(str, "``",, k+1)) {
+			if InStr(q "``nrbtvaf", ch := SubStr(str, k+1, 1))
+				str := SubStr(str, 1, k-1) . esc_seq[ch] . SubStr(str, k+2)
 			else throw "Invalid escape sequence: '``" . ch . "'" 
 		}
 		%push%(strings, str) ;// strings.Insert(str) / strings.Push(str)
@@ -146,7 +146,7 @@ SerDes(src, out:="") {
 	return tree[1]
 }
 ;// Helper function, serialize object to string -> internal use only
-_sddumps(obj, refs:=false) { ;// refs=internal parameter
+_SerDes(obj, refs:=false) { ;// refs=internal parameter
 	static q := Chr(34) ;// Double quote, for v1.1 & v2.0-a compatibility
 	static esc_seq := { ;// AHK escape sequences
 	(Join Q C
@@ -171,24 +171,24 @@ _sddumps(obj, refs:=false) { ;// refs=internal parameter
 		until !arr
 		str := "", len := NumGet(&obj+4*A_PtrSize)
 		for k, v in obj {
-			val := _sddumps(v, refs)
-			str .= (arr ? val : _sddumps(k, refs) ":" val)
+			val := _SerDes(v, refs)
+			str .= (arr ? val : _SerDes(k, refs) ":" val)
 			    .  (A_Index < len ? "," : "")
 		}
 		return arr ? "[" str "]" : "{" str "}"
 	}
 	else if (ObjGetCapacity([obj], 1) == "")
 		return obj
-	i := 0
-	while (i := InStr(obj, "``",, i+1))
-		obj := SubStr(obj, 1, i-1) . "````" . SubStr(obj, i+=1)
+	i := -1
+	while (i := InStr(obj, "``",, i+2))
+		obj := SubStr(obj, 1, i-1) "````" SubStr(obj, i+1)
 	for k, v in esc_seq {
 		/* StringReplace/StrReplace workaround routine for v1.1 and v2.0-a
 		 * compatibility. TODO: Compare w/ RegExReplace(), use RegExReplace()??
 		 */
-		i := 0
-		while (i := InStr(obj, k,, i+1))
-			obj := SubStr(obj, 1, i-1) . v . SubStr(obj, i+=1)
+		i := -1
+		while (i := InStr(obj, k,, i+2))
+			obj := SubStr(obj, 1, i-1) . v . SubStr(obj, i+1)
 	}
 	return q . obj . q
 }
