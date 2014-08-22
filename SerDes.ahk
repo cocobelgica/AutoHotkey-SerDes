@@ -160,28 +160,35 @@ _SerDes(obj, refs:=false) { ;// refs=internal parameter
 		"`f": "``f"      ;// formfeed
 	)}
 	if IsObject(obj) {
+		/* In v2, an exception is thrown when using ObjGetCapacity() on a
+		 * non-standard AHK object (e.g. COM, Func, RegExMatch, File)
+		 */
+		if (ObjGetCapacity(obj) == "")
+			throw "SerDes(): Only standard AHK objects are supported." ; v1.1
 		if !refs
 			refs := {}
-		if refs.HasKey(obj) ;// Object references, includes circular
+		if ObjHasKey(refs, obj) ;// Object references, includes circular
 			return "$" refs[obj] ;// return notation = $(index_of_object)
 		refs[obj] := NumGet(&refs+4*A_PtrSize)+1
 
 		for k in obj
-			arr := (k == A_Index)
-		until !arr
-		str := "", len := NumGet(&obj+4*A_PtrSize)
+			is_array := k == A_Index
+		until !is_array
+		out := "" ;// , len := NumGet(&obj+4*A_PtrSize) -> unreliable
 		for k, v in obj {
-			val := _SerDes(v, refs)
-			str .= (arr ? val : _SerDes(k, refs) ":" val)
-			    .  (A_Index < len ? "," : "")
+			if !is_array
+				out .= _SerDes(k, refs) . ":"
+			out .= _SerDes(v, refs) . ","
 		}
-		return arr ? "[" str "]" : "{" str "}"
+		if (out != "")
+			out := Trim(out, ",")
+		return is_array ? "[" out "]" : "{" out "}"
 	}
 	else if (ObjGetCapacity([obj], 1) == "")
 		return obj
 	i := -1
 	while (i := InStr(obj, "``",, i+2))
-		obj := SubStr(obj, 1, i-1) "````" SubStr(obj, i+1)
+		obj := SubStr(obj, 1, i-1) . "````" . SubStr(obj, i+1)
 	for k, v in esc_seq {
 		/* StringReplace/StrReplace workaround routine for v1.1 and v2.0-a
 		 * compatibility. TODO: Compare w/ RegExReplace(), use RegExReplace()??
