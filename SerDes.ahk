@@ -1,17 +1,26 @@
-/* Function:     SerDes
- *     Serializes an AHK object to string and optionally dumps it into a file.
- *     De-serializes a 'SerDes()' formatted string to an AHK object.
- * AHK Version:  Tested on v1.1.15.03 and v2.0-a049
+/* Function: SerDes
+ *     Serialize an AHK object to string and optionally dumps it into a file.
+ *     De-serialize a 'SerDes()' formatted string to an AHK object.
+ * AHK Version: Requires v1.1+ OR v2.0-a049+
+ * License: WTFPL (http://www.wtfpl.net/)
  *
  * Syntax (Serialize):
- *     str   := SerDes( obj )
- *     bytes := SerDes( obj [, outfile ] )
+ *     str   := SerDes( obj [ ,, indent ] )
+ *     bytes := SerDes( obj, outfile [ , indent ] )
  * Parameter(s):
  *     str       [retval]   - String representation of the object.
  *     bytes     [retval]   - Bytes written to 'outfile'.
  *     obj       [in]       - AHK object to serialize.
  *     outfile   [in, opt]  - The file to write to. If no absolute path is
  *                            specified, %A_WorkingDir% is used.
+ *     indent    [in, opt]  - If indent is an integer or string, then array
+ *                            elements and object members will be pretty-printed
+ *                            with that indent level. Blank(""), the default, OR
+ *                            0, selects the most compact representation. Using
+ *                            an integer indent indents that many spaces per level.
+ *                            If indent is a string, (such as "`t"), that string
+ *                            is used to indent each level. Negative integer is
+ *                            treated as positive.
  *
  * Syntax (Deserialize):
  *     obj := SerDes( src )
@@ -34,9 +43,9 @@
  *     1    2
  *     {"a":["string"], "b":$2} -> '$2' references the object stored in 'a'
  */
-SerDes(src, out:="") {
+SerDes(src, out:="", indent:="") {
 	if IsObject(src) {
-		ret := _SerDes(src)
+		ret := _SerDes(src, indent)
 		if (out == "")
 			return ret
 		if !(f := FileOpen(out, "w"))
@@ -139,15 +148,59 @@ SerDes(src, out:="") {
 			}
 			if is_key
 				key := val, next := ":"
-			else is_array? %push%(_obj, val) : %set%(_obj, key, val)
-			, next := is_array ? "]," : "},"
+			else
+				is_array? %push%(_obj, val) : %set%(_obj, key, val)
+				, next := is_array ? "]," : "},"
 		}
 	}
 	return tree[1]
 }
 ;// Helper function, serialize object to string -> internal use only
-_SerDes(obj, refs:=false) { ;// refs=internal parameter
+_SerDes(obj, indent:="", lvl:=1, refs:=false) { ;// lvl,refs=internal parameters
 	static q := Chr(34) ;// Double quote, for v1.1 & v2.0-a compatibility
+	
+	if IsObject(obj) {
+		/* In v2, an exception is thrown when using ObjGetCapacity() on a
+		 * non-standard AHK object (e.g. COM, Func, RegExMatch, File)
+		 */
+		if (ObjGetCapacity(obj) == "")
+			throw "SerDes(): Only standard AHK objects are supported." ; v1.1
+		if !refs
+			refs := {}
+		if ObjHasKey(refs, obj) ;// Object references, includes circular
+			return "$" refs[obj] ;// return notation = $(index_of_object)
+		refs[obj] := NumGet(&refs + 4*A_PtrSize)+1
+
+		for k in obj
+			is_array := k == A_Index
+		until !is_array
+
+		if (Abs(indent) != "") {
+			spaces := Abs(indent), indent := ""
+			Loop % spaces
+				indent .= " "
+		}
+		indt := ""
+		Loop % indent ? lvl : 0
+			indt .= indent
+
+		lvl += 1, out := "" ;// , len := NumGet(&obj+4*A_PtrSize) -> unreliable
+		for k, v in obj {
+			if !is_array
+				out .= _SerDes(k,,, refs) . ( indent ? ": " : ":" ) ;// object(s) used as keys are not indented
+			out .= _SerDes(v, indent, lvl, refs) . ( indent ? ",`n" . indt : "," )
+		}
+		if (out != "") {
+			out := Trim(out, ",`n" . indent)
+			if (indent != "")
+				out := "`n" . indt . out . "`n" . SubStr(indt, 1, -StrLen(indent)) ;// trim 1 level of indentation
+		}
+		return is_array ? "[" out "]" : "{" out "}"
+	}
+	
+	else if (ObjGetCapacity([obj], 1) == "")
+		return obj
+	
 	static esc_seq := { ;// AHK escape sequences
 	(Join Q C
 		(q):  "``" . q,  ;// double quote
@@ -159,33 +212,6 @@ _SerDes(obj, refs:=false) { ;// refs=internal parameter
 		"`a": "``a",     ;// alert (bell)
 		"`f": "``f"      ;// formfeed
 	)}
-	if IsObject(obj) {
-		/* In v2, an exception is thrown when using ObjGetCapacity() on a
-		 * non-standard AHK object (e.g. COM, Func, RegExMatch, File)
-		 */
-		if (ObjGetCapacity(obj) == "")
-			throw "SerDes(): Only standard AHK objects are supported." ; v1.1
-		if !refs
-			refs := {}
-		if ObjHasKey(refs, obj) ;// Object references, includes circular
-			return "$" refs[obj] ;// return notation = $(index_of_object)
-		refs[obj] := NumGet(&refs+4*A_PtrSize)+1
-
-		for k in obj
-			is_array := k == A_Index
-		until !is_array
-		out := "" ;// , len := NumGet(&obj+4*A_PtrSize) -> unreliable
-		for k, v in obj {
-			if !is_array
-				out .= _SerDes(k, refs) . ":"
-			out .= _SerDes(v, refs) . ","
-		}
-		if (out != "")
-			out := Trim(out, ",")
-		return is_array ? "[" out "]" : "{" out "}"
-	}
-	else if (ObjGetCapacity([obj], 1) == "")
-		return obj
 	i := -1
 	while (i := InStr(obj, "``",, i+2))
 		obj := SubStr(obj, 1, i-1) . "````" . SubStr(obj, i+1)
